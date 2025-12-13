@@ -8,13 +8,25 @@ let cachedLoans = [];
 
 function listenToLoans(callback) {
     db.ref('loans').on('value', snapshot => {
-        cachedLoans = snapshot.val() || [];
+        const data = snapshot.val() || [];
+        console.log('Loaded loans from Firebase:', data);
+        cachedLoans = data;
         callback(cachedLoans);
+    }, function(error) {
+        console.error('Error loading loans:', error);
     });
 }
 
 function saveLoans(loans, callback) {
-    db.ref('loans').set(loans, callback);
+    console.log('Saving loans to Firebase:', loans);
+    db.ref('loans').set(loans, function(error) {
+        if (error) {
+            console.error('Error saving loans:', error);
+        } else {
+            console.log('Loans saved successfully');
+        }
+        if (callback) callback(error);
+    });
     cachedLoans = loans;
 }
 
@@ -226,7 +238,7 @@ function updatePieCharts(selectedLoan) {
         totalPrincipal = selectedLoan.principal;
         loanName = selectedLoan.name || `Loan`;
     } else {
-        const loans = getLoans();
+        const loans = cachedLoans;
         loans.forEach((loan, idx) => {
             loan.statement?.forEach(row => {
                 totalPrincipalPaid += row.principalPaid;

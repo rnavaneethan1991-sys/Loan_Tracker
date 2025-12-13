@@ -87,20 +87,18 @@
   const firebaseConfig = {
     apiKey: "AIzaSyBy2dRpqzkRX-MHf7j5izpX2hc3JCczSCk",
     authDomain: "myloantracker-89928.firebaseapp.com",
+    // databaseURL: "https://console.firebase.google.com/project/myloantracker-89928/database/myloantracker-89928-default-rtdb/data/~2F",
+    databaseURL: "https://myloantracker-89928-default-rtdb.asia-southeast1.firebasedatabase.app/",
     projectId: "myloantracker-89928",
-    storageBucket: "myloantracker-89928.firebasestorage.app",
+    storageBucket: "myloantracker-89928.appspot.com",
     messagingSenderId: "55434160742",
     appId: "1:55434160742:web:75887feae61279218e5ba7"
-    // ...your config from Firebase console...
   };
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
-
-
+  console.log('Firebase initialized', firebaseConfig);
 </script>
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
 <script src="loan-tracker.js"></script>
 </body>
 </html>
