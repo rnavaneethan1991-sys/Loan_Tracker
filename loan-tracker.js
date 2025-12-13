@@ -5,8 +5,9 @@
 // Global cache for UI updates
 let cachedLoans = [];
 
-function getLoans(callback) {
-    db.ref('loans').once('value').then(snapshot => {
+
+function listenToLoans(callback) {
+    db.ref('loans').on('value', snapshot => {
         cachedLoans = snapshot.val() || [];
         callback(cachedLoans);
     });
@@ -331,8 +332,8 @@ function downloadStatement(idx) {
 
 // --- Init ---
 window.onload = function() {
-    // Load from Firebase and render
-    getLoans(function(loans) {
+    // Real-time sync from Firebase
+    listenToLoans(function(loans) {
         // Fix: recalculate statement for all loans if date is missing
         let changed = false;
         loans.forEach(loan => {
