@@ -1,17 +1,25 @@
 // loan-tracker.js
 // Main logic for Loan Tracker
 
-// --- Data Management ---
-function getLoans() {
-    return JSON.parse(localStorage.getItem('loans') || '[]');
+// --- Data Management (Firebase) ---
+// Global cache for UI updates
+let cachedLoans = [];
+
+function getLoans(callback) {
+    db.ref('loans').once('value').then(snapshot => {
+        cachedLoans = snapshot.val() || [];
+        callback(cachedLoans);
+    });
 }
-function saveLoans(loans) {
-    localStorage.setItem('loans', JSON.stringify(loans));
+
+function saveLoans(loans, callback) {
+    db.ref('loans').set(loans, callback);
+    cachedLoans = loans;
 }
 
 // --- UI Rendering ---
 function renderLoanList() {
-    const loans = getLoans();
+    const loans = cachedLoans;
     const list = document.getElementById('loanList');
     list.innerHTML = '';
     loans.forEach((loan, idx) => {
@@ -43,16 +51,17 @@ function renderLoanList() {
 // --- Delete Loan ---
 function deleteLoan(idx) {
     if (!confirm('Are you sure you want to delete this loan?')) return;
-    const loans = getLoans();
+    const loans = cachedLoans;
     loans.splice(idx, 1);
-    saveLoans(loans);
-    document.getElementById('loanDetails').innerHTML = '';
-    renderLoanList();
-    updatePieCharts();
+    saveLoans(loans, () => {
+        document.getElementById('loanDetails').innerHTML = '';
+        renderLoanList();
+        updatePieCharts();
+    });
 }
 
 function showLoanDetails(idx) {
-    const loans = getLoans();
+    const loans = cachedLoans;
     const loan = loans[idx];
     if (!loan) return;
     if (!loan.statement) loan.statement = generateStatement(loan);
@@ -97,7 +106,7 @@ function renderLoanDetails(idx, loan) {
 
 // Save edits to principal, interest, tenure
 function saveLoanEdits(idx) {
-    const loans = getLoans();
+    const loans = cachedLoans;
     const loan = loans[idx];
     const newPrincipal = Number(document.getElementById('editPrincipal').value);
     const newInterest = Number(document.getElementById('editInterest').value);
@@ -117,9 +126,10 @@ function saveLoanEdits(idx) {
         }
         // Recalculate statement to ensure date is set for all rows
         recalcStatement(loan);
-        saveLoans(loans);
-        renderLoanDetails(idx, loan);
-        updatePieCharts(loan);
+        saveLoans(loans, () => {
+            renderLoanDetails(idx, loan);
+            updatePieCharts(loan);
+        });
     }
 }
 
@@ -159,21 +169,23 @@ function generateStatement(loan) {
 }
 
 function updatePartPayment(loanIdx, monthIdx, value) {
-    const loans = getLoans();
+    const loans = cachedLoans;
     const loan = loans[loanIdx];
     loan.statement[monthIdx].partPayment = Number(value)||0;
     recalcStatement(loan);
-    saveLoans(loans);
-    renderLoanDetails(loanIdx, loan);
+    saveLoans(loans, () => {
+        renderLoanDetails(loanIdx, loan);
+    });
 }
 
 function updateInterestRate(loanIdx, monthIdx, value) {
-    const loans = getLoans();
+    const loans = cachedLoans;
     const loan = loans[loanIdx];
     loan.statement[monthIdx].interestRate = Number(value)||loan.interest;
     recalcStatement(loan);
-    saveLoans(loans);
-    renderLoanDetails(loanIdx, loan);
+    saveLoans(loans, () => {
+        renderLoanDetails(loanIdx, loan);
+    });
 }
 
 function recalcStatement(loan) {
@@ -290,18 +302,19 @@ document.getElementById('addLoanForm').onsubmit = function(e) {
     }
     const loan = { principal, interest, tenure, startDate };
     loan.statement = generateStatement(loan);
-    const loans = getLoans();
+    const loans = cachedLoans;
     loans.push(loan);
-    saveLoans(loans);
-    renderLoanList();
-    document.getElementById('addLoanForm').reset();
-    var modal = bootstrap.Modal.getInstance(document.getElementById('addLoanModal'));
-    modal.hide();
+    saveLoans(loans, () => {
+        renderLoanList();
+        document.getElementById('addLoanForm').reset();
+        var modal = bootstrap.Modal.getInstance(document.getElementById('addLoanModal'));
+        modal.hide();
+    });
 };
 
 // --- Download Statement ---
 function downloadStatement(idx) {
-    const loans = getLoans();
+    const loans = cachedLoans;
     const loan = loans[idx];
     let csv = 'Month,Date,EMI,Principal Paid,Interest Paid,Part Payment,Interest Rate,Pending\n';
     loan.statement.forEach((row, i) => {
@@ -318,16 +331,18 @@ function downloadStatement(idx) {
 
 // --- Init ---
 window.onload = function() {
-    // Fix: recalculate statement for all loans if date is missing
-    let loans = getLoans();
-    let changed = false;
-    loans.forEach(loan => {
-        if (loan.statement && loan.statement.length > 0 && (!loan.statement[0].date)) {
-            loan.statement = generateStatement(loan);
-            changed = true;
-        }
+    // Load from Firebase and render
+    getLoans(function(loans) {
+        // Fix: recalculate statement for all loans if date is missing
+        let changed = false;
+        loans.forEach(loan => {
+            if (loan.statement && loan.statement.length > 0 && (!loan.statement[0].date)) {
+                loan.statement = generateStatement(loan);
+                changed = true;
+            }
+        });
+        if (changed) saveLoans(loans);
+        renderLoanList();
+        updatePieCharts();
     });
-    if (changed) saveLoans(loans);
-    renderLoanList();
-    updatePieCharts();
 };
