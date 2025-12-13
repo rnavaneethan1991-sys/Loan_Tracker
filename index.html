@@ -9,15 +9,44 @@
     <style>
         body { background: #f8f9fa; }
         .loan-list { max-height: 300px; overflow-y: auto; }
-        .pie-container { display: flex; gap: 2rem; justify-content: center; margin-bottom: 2rem; }
+        .pie-container {
+          display: flex;
+          gap: 2rem;
+          justify-content: center;
+          margin-bottom: 2rem;
+          flex-wrap: wrap;
+        }
         .pie-chart {
-          width: 300px !important;
-          height: 300px !important;
-          max-width: 300px !important;
-          max-height: 300px !important;
-          min-width: 300px !important;
-          min-height: 300px !important;
+          width: 100% !important;
+          height: auto !important;
+          max-width: 320px !important;
+          max-height: 320px !important;
+          min-width: 180px !important;
+          min-height: 180px !important;
+          aspect-ratio: 1 / 1;
           display: block;
+          margin: 0 auto;
+        }
+        @media (max-width: 600px) {
+          .pie-container {
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+          }
+          .pie-chart {
+            max-width: 98vw !important;
+            min-width: 140px !important;
+            width: 98vw !important;
+            height: auto !important;
+          }
+          .statement-table {
+            font-size: 0.95rem;
+          }
+        }
+        /* Always allow horizontal scroll for tables on mobile */
+        .table-responsive {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
         }
         .statement-table input { width: 90px; }
     </style>
@@ -25,6 +54,9 @@
 <body>
 <div class="container py-4">
     <h1 class="mb-4">Loan Tracker</h1>
+    <div class="mb-4">
+      <a href="LOAN REPAYMENT TRACKER_1.html" target="_blank" class="btn btn-info">View Loan Repayment Guide</a>
+    </div>
     <div class="pie-container">
         <canvas id="piePaid" class="pie-chart" width="300" height="300" style="width:300px;height:300px;"></canvas>
         <canvas id="piePrincipal" class="pie-chart" width="300" height="300" style="width:300px;height:300px;"></canvas>
