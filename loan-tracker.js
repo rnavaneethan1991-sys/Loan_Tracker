@@ -1,5 +1,17 @@
+
 // loan-tracker.js
 // Main logic for Loan Tracker
+
+// === Version Info (update here for both developer and end user) ===
+const APP_VERSION = '1.2.0';
+const APP_LAST_UPDATED = '2025-12-16';
+// Version: 1.2.0
+// Last Updated: 2025-12-16
+
+// Version History:
+// 1.2.0 - 2025-12-16: End date reflects real closure, tenure/EMI preserved, version header added
+// 1.1.0 - 2025-12-15: Part payment reduces tenure, not EMI
+// 1.0.0 - Initial version
 
 // --- Data Management (Firebase) ---
 // Global cache for UI updates
@@ -41,13 +53,32 @@ function renderLoanList() {
         const info = document.createElement('span');
         info.className = 'flex-grow-1 loan-info';
         info.style.cursor = 'pointer';
-        // Calculate end date
-        let start = loan.startDate ? new Date(loan.startDate) : new Date();
-        if (!loan.startDate) loan.startDate = start.toISOString();
-        let end = new Date(start);
-        end.setMonth(end.getMonth() + Number(loan.tenure));
-        const endMonth = end.toLocaleString('default', { month: 'short' });
-        const endYear = end.getFullYear();
+        // Calculate end date based on actual closure (last EMI in statement)
+        let endMonth, endYear;
+        if (loan.statement && loan.statement.length > 0) {
+            const lastRow = loan.statement[loan.statement.length - 1];
+            if (lastRow.date) {
+                const [month, year] = lastRow.date.split(' ');
+                endMonth = month;
+                endYear = year;
+            } else {
+                // fallback to original logic
+                let start = loan.startDate ? new Date(loan.startDate) : new Date();
+                if (!loan.startDate) loan.startDate = start.toISOString();
+                let end = new Date(start);
+                end.setMonth(end.getMonth() + Number(loan.tenure));
+                endMonth = end.toLocaleString('default', { month: 'short' });
+                endYear = end.getFullYear();
+            }
+        } else {
+            // fallback to original logic
+            let start = loan.startDate ? new Date(loan.startDate) : new Date();
+            if (!loan.startDate) loan.startDate = start.toISOString();
+            let end = new Date(start);
+            end.setMonth(end.getMonth() + Number(loan.tenure));
+            endMonth = end.toLocaleString('default', { month: 'short' });
+            endYear = end.getFullYear();
+        }
         info.textContent = `${loan.principal} @ ${loan.interest}% for ${loan.tenure}m (Ends: ${endMonth} ${endYear})`;
         info.onclick = () => showLoanDetails(idx);
         const delBtn = document.createElement('button');
@@ -84,23 +115,26 @@ function showLoanDetails(idx) {
 
 function renderLoanDetails(idx, loan) {
     const container = document.getElementById('loanDetails');
-    let html = `<h4>Loan Details</h4>
-    <div class="mb-2">
-      <label><b>Principal:</b> <input id="editPrincipal" type="number" min="1" value="${loan.principal}" style="width:120px"></label>
-    </div>
-    <div class="mb-2">
-      <label><b>Interest Rate:</b> <input id="editInterest" type="number" min="0" step="0.01" value="${loan.interest}" style="width:80px">%</label>
-    </div>
-    <div class="mb-2">
-      <label><b>Tenure:</b> <input id="editTenure" type="number" min="1" value="${loan.tenure}" style="width:80px"> months</label>
-    </div>
-    <div class="mb-2"><b>EMI:</b> ₹${calcEMI(loan.principal, loan.interest, loan.tenure)}</div>
-    <div class="mb-2 d-flex gap-2">
-      <button class="btn btn-primary btn-sm" onclick="saveLoanEdits(${idx})">Save Changes</button>
-      <button class="btn btn-secondary btn-sm" onclick="downloadStatement(${idx})">Download Statement</button>
-    </div>
-    <div class="table-responsive"><table class="table table-bordered statement-table">
-    <thead><tr><th>Month</th><th>Date</th><th>EMI</th><th>Principal Paid</th><th>Interest Paid</th><th>Part Payment</th><th>Interest Rate</th><th>Pending</th></tr></thead><tbody>`;
+        let html = `<h4>Loan Details</h4>
+        <div class="mb-2">
+            <label><b>Principal:</b> <input id="editPrincipal" type="number" min="1" value="${loan.principal}" style="width:120px"></label>
+        </div>
+        <div class="mb-2">
+            <label><b>Interest Rate:</b> <input id="editInterest" type="number" min="0" step="0.01" value="${loan.interest}" style="width:80px">%</label>
+        </div>
+        <div class="mb-2">
+            <label><b>Tenure:</b> <input id="editTenure" type="number" min="1" value="${loan.tenure}" style="width:80px"> months</label>
+        </div>
+        <div class="mb-2"><b>Original Tenure:</b> ${loan.originalTenure || loan.tenure} months</div>
+        <div class="mb-2"><b>Original EMI:</b> ₹${loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure)}</div>
+        <div class="mb-2"><b>Current Tenure (after part payments):</b> ${loan.statement ? loan.statement.length : loan.tenure} months</div>
+        <div class="mb-2"><b>EMI:</b> ₹${loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure)}</div>
+        <div class="mb-2 d-flex gap-2">
+            <button class="btn btn-primary btn-sm" onclick="saveLoanEdits(${idx})">Save Changes</button>
+            <button class="btn btn-secondary btn-sm" onclick="downloadStatement(${idx})">Download Statement</button>
+        </div>
+        <div class="table-responsive"><table class="table table-bordered statement-table">
+        <thead><tr><th>Month</th><th>Date</th><th>EMI</th><th>Principal Paid</th><th>Interest Paid</th><th>Part Payment</th><th>Interest Rate</th><th>Pending</th></tr></thead><tbody>`;
     loan.statement.forEach((row, i) => {
         html += `<tr>
             <td>${i+1}</td>
@@ -114,7 +148,97 @@ function renderLoanDetails(idx, loan) {
         </tr>`;
     });
     html += '</tbody></table></div>';
+    // Add a canvas for the burn down chart
+    html += '<div class="mt-4"><h5>Loan Burn Down</h5><canvas id="burnDownChart" height="120"></canvas></div>';
     container.innerHTML = html;
+    // Draw the burn down chart
+    setTimeout(() => drawBurnDownChart(loan), 0);
+// --- Burn Down Chart ---
+function drawBurnDownChart(loan) {
+    const ctx = document.getElementById('burnDownChart');
+    if (!ctx) return;
+    // Clean up previous chart if exists
+    if (window.burnDownChartInstance) {
+        window.burnDownChartInstance.destroy();
+    }
+    // Actual burn down
+    const actualLabels = loan.statement.map((row, i) => row.date || `M${i+1}`);
+    const actualData = loan.statement.map(row => row.pending);
+
+    // Original plan burn down (no part payments)
+    let origPending = loan.principal;
+    let origEMI = loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure);
+    let origRate = loan.interest;
+    let origTenure = loan.originalTenure || loan.tenure;
+    let origStartDate = loan.startDate ? new Date(loan.startDate) : new Date();
+    let origPlan = [];
+    let origLabels = [];
+    for (let m = 1; m <= origTenure; m++) {
+        let interestPaid = Math.round(origPending * origRate/12/100);
+        let principalPaid = origEMI - interestPaid;
+        origPending -= principalPaid;
+        origPlan.push(Math.max(0, Math.round(origPending)));
+        let emiDate = new Date(origStartDate);
+        emiDate.setMonth(emiDate.getMonth() + (m-1));
+        origLabels.push(emiDate.toLocaleString('default', { month: 'short', year: 'numeric' }));
+        if (origPending <= 0) break;
+    }
+
+    // Use the longer of the two for labels
+    const maxLen = Math.max(actualLabels.length, origLabels.length);
+    const chartLabels = [];
+    for (let i = 0; i < maxLen; i++) {
+        chartLabels.push(actualLabels[i] || origLabels[i] || `M${i+1}`);
+    }
+    // Pad data arrays to same length
+    const actualDataPadded = [...actualData];
+    while (actualDataPadded.length < maxLen) actualDataPadded.push(null);
+    const origPlanPadded = [...origPlan];
+    while (origPlanPadded.length < maxLen) origPlanPadded.push(null);
+
+    window.burnDownChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartLabels,
+            datasets: [
+                {
+                    label: 'Actual Pending Principal',
+                    data: actualDataPadded,
+                    borderColor: '#e53935',
+                    backgroundColor: 'rgba(229,57,53,0.08)',
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 2,
+                    pointBackgroundColor: '#e53935',
+                    pointBorderColor: '#fff',
+                },
+                {
+                    label: 'Original Plan',
+                    data: origPlanPadded,
+                    borderColor: '#1976d2',
+                    backgroundColor: 'rgba(25,118,210,0.07)',
+                    fill: false,
+                    borderDash: [6,4],
+                    tension: 0.2,
+                    pointRadius: 2,
+                    pointBackgroundColor: '#1976d2',
+                    pointBorderColor: '#fff',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { display: true, position: 'top' },
+                title: { display: false }
+            },
+            scales: {
+                x: { title: { display: true, text: 'Month' } },
+                y: { title: { display: true, text: 'Pending Principal (₹)' }, beginAtZero: true }
+            }
+        }
+    });
+}
 }
 
 // Save edits to principal, interest, tenure
@@ -124,6 +248,9 @@ function saveLoanEdits(idx) {
     const newPrincipal = Number(document.getElementById('editPrincipal').value);
     const newInterest = Number(document.getElementById('editInterest').value);
     const newTenure = Number(document.getElementById('editTenure').value);
+    // Preserve original values if not already set
+    if (loan.originalTenure === undefined) loan.originalTenure = loan.tenure;
+    if (loan.originalEMI === undefined) loan.originalEMI = calcEMI(loan.principal, loan.interest, loan.tenure);
     // If any value changed, update and recalc
     if (loan.principal !== newPrincipal || loan.interest !== newInterest || loan.tenure !== newTenure) {
         // Save old part payments and interest rates if possible
@@ -203,26 +330,37 @@ function updateInterestRate(loanIdx, monthIdx, value) {
 
 function recalcStatement(loan) {
     let pending = loan.principal;
-    let tenure = loan.tenure;
-    // Ensure startDate is set
     let startDate = loan.startDate ? new Date(loan.startDate) : new Date();
-    for (let m = 0; m < tenure; m++) {
-        let row = loan.statement[m];
+    let m = 0;
+    // Always use the original EMI for recalculation
+    let fixedEMI = loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure);
+    while (pending > 0.5 && m < 600) { // safety limit
+        let row = loan.statement[m] || {};
         let rate = row.interestRate || loan.interest;
-        let emi = calcEMI(pending, rate, tenure-m);
+        let emi = fixedEMI;
         let interestPaid = Math.round(pending * rate/12/100);
         let principalPaid = emi - interestPaid;
         let partPayment = Number(row.partPayment)||0;
-        row.emi = emi;
+        // If last payment, adjust EMI to not overpay
+        if (pending - (principalPaid + partPayment) < -0.5) {
+            principalPaid = pending - partPayment;
+            emi = principalPaid + interestPaid;
+        }
+        row.emi = Math.max(0, Math.round(emi));
         row.interestPaid = interestPaid;
-        row.principalPaid = principalPaid;
+        row.principalPaid = Math.max(0, Math.round(principalPaid));
         // Update date for this EMI
         let emiDate = new Date(startDate);
         emiDate.setMonth(emiDate.getMonth() + m);
         row.date = emiDate.toLocaleString('default', { month: 'short', year: 'numeric' });
         pending -= (principalPaid + partPayment);
         row.pending = Math.max(0, Math.round(pending));
+        loan.statement[m] = row;
+        m++;
     }
+    // Remove any extra rows if tenure reduced
+    loan.statement = loan.statement.slice(0, m);
+    // Do NOT update loan.tenure here; keep original for reference
 }
 
 // --- Pie Charts ---
@@ -323,6 +461,9 @@ document.getElementById('addLoanForm').onsubmit = function(e) {
         var modal = bootstrap.Modal.getInstance(document.getElementById('addLoanModal'));
         modal.hide();
     });
+        // Set original tenure and EMI on loan creation
+        loan.originalTenure = tenure;
+        loan.originalEMI = calcEMI(principal, interest, tenure);
 };
 
 // --- Download Statement ---
@@ -344,6 +485,25 @@ function downloadStatement(idx) {
 
 // --- Init ---
 window.onload = function() {
+    // Show version and last updated date to user
+    // Place version/date info at top right of page
+    if (!document.getElementById('versionInfo')) {
+        const versionInfo = document.createElement('div');
+        versionInfo.id = 'versionInfo';
+        versionInfo.style.position = 'absolute';
+        versionInfo.style.top = '12px';
+        versionInfo.style.right = '24px';
+        versionInfo.style.fontSize = '0.98em';
+        versionInfo.style.color = '#444';
+        versionInfo.style.background = 'rgba(255,255,255,0.85)';
+        versionInfo.style.padding = '4px 14px';
+        versionInfo.style.borderRadius = '8px';
+        versionInfo.style.boxShadow = '0 1px 4px rgba(0,0,0,0.07)';
+        versionInfo.style.zIndex = '1000';
+        versionInfo.innerHTML = `<b>Loan Tracker</b> &mdash; Version: ${APP_VERSION} &nbsp;|&nbsp; Last Updated: ${APP_LAST_UPDATED}`;
+        document.body.appendChild(versionInfo);
+    }
+
     // Real-time sync from Firebase
     listenToLoans(function(loans) {
         // Fix: recalculate statement for all loans if date is missing
