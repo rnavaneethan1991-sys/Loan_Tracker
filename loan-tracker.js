@@ -135,7 +135,7 @@ function renderLoanDetails(idx, loan) {
                 <button class="btn btn-primary btn-sm" onclick="saveLoanEdits(${idx})">Save Changes</button>
                 <button class="btn btn-secondary btn-sm" onclick="downloadStatement(${idx})">Download Statement</button>
             </div>
-            <div class="mt-4"><h5>Loan Burn Down</h5><canvas id="burnDownChart" height="120"></canvas></div>
+            <div class="mt-4"><h5>Loan Burn Down</h5><div style="width:100%;max-width:700px;margin:0 auto;"><canvas id="burnDownChart" style="width:100%;height:340px;min-height:180px;"></canvas></div></div>
             <div class="table-responsive"><table class="table table-bordered statement-table">
             <thead><tr><th>Month</th><th>Date</th><th>EMI</th><th>Principal Paid</th><th>Interest Paid</th><th>Part Payment</th><th>Interest Rate</th><th>Pending</th></tr></thead><tbody>`;
         loan.statement.forEach((row, i) => {
