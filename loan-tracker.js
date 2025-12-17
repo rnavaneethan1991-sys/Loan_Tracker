@@ -3,12 +3,14 @@
 // Main logic for Loan Tracker
 
 // === Version Info (update here for both developer and end user) ===
-const APP_VERSION = '1.2.0';
-const APP_LAST_UPDATED = '2025-12-16';
-// Version: 1.2.0
-// Last Updated: 2025-12-16
+
+const APP_VERSION = '1.2.1';
+const APP_LAST_UPDATED = '2025-12-17';
+// Version: 1.2.1
+// Last Updated: 2025-12-17
 
 // Version History:
+// 1.2.1 - 2025-12-17: Burn down chart moved above statement, minor UI improvements
 // 1.2.0 - 2025-12-16: End date reflects real closure, tenure/EMI preserved, version header added
 // 1.1.0 - 2025-12-15: Part payment reduces tenure, not EMI
 // 1.0.0 - Initial version
@@ -116,43 +118,42 @@ function showLoanDetails(idx) {
 function renderLoanDetails(idx, loan) {
     const container = document.getElementById('loanDetails');
         let html = `<h4>Loan Details</h4>
-        <div class="mb-2">
-            <label><b>Principal:</b> <input id="editPrincipal" type="number" min="1" value="${loan.principal}" style="width:120px"></label>
-        </div>
-        <div class="mb-2">
-            <label><b>Interest Rate:</b> <input id="editInterest" type="number" min="0" step="0.01" value="${loan.interest}" style="width:80px">%</label>
-        </div>
-        <div class="mb-2">
-            <label><b>Tenure:</b> <input id="editTenure" type="number" min="1" value="${loan.tenure}" style="width:80px"> months</label>
-        </div>
-        <div class="mb-2"><b>Original Tenure:</b> ${loan.originalTenure || loan.tenure} months</div>
-        <div class="mb-2"><b>Original EMI:</b> ₹${loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure)}</div>
-        <div class="mb-2"><b>Current Tenure (after part payments):</b> ${loan.statement ? loan.statement.length : loan.tenure} months</div>
-        <div class="mb-2"><b>EMI:</b> ₹${loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure)}</div>
-        <div class="mb-2 d-flex gap-2">
-            <button class="btn btn-primary btn-sm" onclick="saveLoanEdits(${idx})">Save Changes</button>
-            <button class="btn btn-secondary btn-sm" onclick="downloadStatement(${idx})">Download Statement</button>
-        </div>
-        <div class="table-responsive"><table class="table table-bordered statement-table">
-        <thead><tr><th>Month</th><th>Date</th><th>EMI</th><th>Principal Paid</th><th>Interest Paid</th><th>Part Payment</th><th>Interest Rate</th><th>Pending</th></tr></thead><tbody>`;
-    loan.statement.forEach((row, i) => {
-        html += `<tr>
-            <td>${i+1}</td>
-            <td>${row.date || ''}</td>
-            <td>₹${row.emi}</td>
-            <td>₹${row.principalPaid}</td>
-            <td>₹${row.interestPaid}</td>
-            <td><input type="number" min="0" value="${row.partPayment||''}" onchange="updatePartPayment(${idx},${i},this.value)"></td>
-            <td><input type="number" min="0" step="0.01" value="${row.interestRate||loan.interest}" onchange="updateInterestRate(${idx},${i},this.value)"></td>
-            <td>₹${row.pending}</td>
-        </tr>`;
-    });
-    html += '</tbody></table></div>';
-    // Add a canvas for the burn down chart
-    html += '<div class="mt-4"><h5>Loan Burn Down</h5><canvas id="burnDownChart" height="120"></canvas></div>';
-    container.innerHTML = html;
-    // Draw the burn down chart
-    setTimeout(() => drawBurnDownChart(loan), 0);
+            <div class="mb-2">
+                <label><b>Principal:</b> <input id="editPrincipal" type="number" min="1" value="${loan.principal}" style="width:120px"></label>
+            </div>
+            <div class="mb-2">
+                <label><b>Interest Rate:</b> <input id="editInterest" type="number" min="0" step="0.01" value="${loan.interest}" style="width:80px">%</label>
+            </div>
+            <div class="mb-2">
+                <label><b>Tenure:</b> <input id="editTenure" type="number" min="1" value="${loan.tenure}" style="width:80px"> months</label>
+            </div>
+            <div class="mb-2"><b>Original Tenure:</b> ${loan.originalTenure || loan.tenure} months</div>
+            <div class="mb-2"><b>Original EMI:</b> ₹${loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure)}</div>
+            <div class="mb-2"><b>Current Tenure (after part payments):</b> ${loan.statement ? loan.statement.length : loan.tenure} months</div>
+            <div class="mb-2"><b>EMI:</b> ₹${loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure)}</div>
+            <div class="mb-2 d-flex gap-2">
+                <button class="btn btn-primary btn-sm" onclick="saveLoanEdits(${idx})">Save Changes</button>
+                <button class="btn btn-secondary btn-sm" onclick="downloadStatement(${idx})">Download Statement</button>
+            </div>
+            <div class="mt-4"><h5>Loan Burn Down</h5><canvas id="burnDownChart" height="120"></canvas></div>
+            <div class="table-responsive"><table class="table table-bordered statement-table">
+            <thead><tr><th>Month</th><th>Date</th><th>EMI</th><th>Principal Paid</th><th>Interest Paid</th><th>Part Payment</th><th>Interest Rate</th><th>Pending</th></tr></thead><tbody>`;
+        loan.statement.forEach((row, i) => {
+            html += `<tr>
+                <td>${i+1}</td>
+                <td>${row.date || ''}</td>
+                <td>₹${row.emi}</td>
+                <td>₹${row.principalPaid}</td>
+                <td>₹${row.interestPaid}</td>
+                <td><input type="number" min="0" value="${row.partPayment||''}" onchange="updatePartPayment(${idx},${i},this.value)"></td>
+                <td><input type="number" min="0" step="0.01" value="${row.interestRate||loan.interest}" onchange="updateInterestRate(${idx},${i},this.value)"></td>
+                <td>₹${row.pending}</td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+        // Draw the burn down chart
+        setTimeout(() => drawBurnDownChart(loan), 0);
 // --- Burn Down Chart ---
 function drawBurnDownChart(loan) {
     const ctx = document.getElementById('burnDownChart');
