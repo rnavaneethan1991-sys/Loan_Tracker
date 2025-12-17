@@ -488,21 +488,10 @@ function downloadStatement(idx) {
 window.onload = function() {
     // Show version and last updated date to user
     // Place version/date info at top right of page
-    if (!document.getElementById('versionInfo')) {
-        const versionInfo = document.createElement('div');
-        versionInfo.id = 'versionInfo';
-        versionInfo.style.position = 'absolute';
-        versionInfo.style.top = '12px';
-        versionInfo.style.right = '24px';
-        versionInfo.style.fontSize = '0.98em';
-        versionInfo.style.color = '#444';
-        versionInfo.style.background = 'rgba(255,255,255,0.85)';
-        versionInfo.style.padding = '4px 14px';
-        versionInfo.style.borderRadius = '8px';
-        versionInfo.style.boxShadow = '0 1px 4px rgba(0,0,0,0.07)';
-        versionInfo.style.zIndex = '1000';
-        versionInfo.innerHTML = `<b>Loan Tracker</b> &mdash; Version: ${APP_VERSION} &nbsp;|&nbsp; Last Updated: ${APP_LAST_UPDATED}`;
-        document.body.appendChild(versionInfo);
+    // Always update version info in the dedicated div
+    var versionInfo = document.getElementById('versionInfo');
+    if (versionInfo) {
+        versionInfo.innerHTML = `Version: ${APP_VERSION}<br>Last Updated: ${APP_LAST_UPDATED}`;
     }
 
     // Real-time sync from Firebase
