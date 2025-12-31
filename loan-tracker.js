@@ -277,8 +277,14 @@ function saveLoanEdits(idx) {
 
 // --- Loan Calculation ---
 function calcEMI(P, R, N) {
-    const r = R/12/100;
-    return Math.round(P * r * Math.pow(1+r,N) / (Math.pow(1+r,N)-1));
+    // Match Excel's PMT function for EMI calculation
+    const r = R / 12 / 100;
+    if (r === 0) return Math.round(P / N);
+    // Use higher precision and round only at the end
+    const numerator = P * r * Math.pow(1 + r, N);
+    const denominator = Math.pow(1 + r, N) - 1;
+    const emi = numerator / denominator;
+    return Math.round(emi);
 }
 
 function generateStatement(loan) {
