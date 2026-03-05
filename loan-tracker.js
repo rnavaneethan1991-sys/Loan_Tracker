@@ -190,8 +190,33 @@ function renderLoanDetails(idx, loan) {
             <div class="mb-2 d-flex gap-2">
                 <button class="btn btn-primary btn-sm" onclick="saveLoanEdits(${idx})">Save Changes</button>
                 <button class="btn btn-secondary btn-sm" onclick="downloadStatement(${idx})">Download Statement</button>
+            </div>`;
+
+        // --- Payment Summary ---
+        const totPrincipal = loan.statement.reduce((s, r) => s + (r.principalPaid || 0), 0);
+        const totInterest  = loan.statement.reduce((s, r) => s + (r.interestPaid  || 0), 0);
+        const totPart      = loan.statement.reduce((s, r) => s + (Number(r.partPayment) || 0), 0);
+        const totFee       = Number(loan.processingFee) || 0;
+        const totPaid      = totPrincipal + totInterest + totPart + totFee;
+        const extraPaid    = totInterest + totFee;   // extra over principal (interest + processing fee only)
+
+        html += `<div class="card mt-3 mb-3 border-primary">
+            <div class="card-header bg-primary text-white fw-bold">Payment Summary</div>
+            <div class="card-body p-2">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        <tr><td>Principal Paid</td><td class="text-end">₹${totPrincipal.toLocaleString()}</td></tr>
+                        <tr><td>Interest Paid</td><td class="text-end text-danger">₹${totInterest.toLocaleString()}</td></tr>
+                        ${totPart > 0 ? `<tr><td>Part Payments</td><td class="text-end">₹${totPart.toLocaleString()}</td></tr>` : ''}
+                        ${totFee  > 0 ? `<tr><td>Processing Fee (one-time)</td><td class="text-end text-danger">₹${totFee.toLocaleString()}</td></tr>` : ''}
+                        <tr class="table-primary fw-bold"><td>Total Paid to Bank</td><td class="text-end">₹${totPaid.toLocaleString()}</td></tr>
+                        <tr class="table-danger"><td>Extra Paid over Principal</td><td class="text-end fw-bold">₹${extraPaid.toLocaleString()}</td></tr>
+                    </tbody>
+                </table>
             </div>
-            <div class="mt-4"><h5>Loan Burn Down</h5><div style="width:100%;max-width:700px;margin:0 auto;"><canvas id="burnDownChart" style="width:100%;height:340px;min-height:180px;"></canvas></div></div>
+        </div>`;
+
+        html += `<div class="mt-4"><h5>Loan Burn Down</h5><div style="width:100%;max-width:700px;margin:0 auto;"><canvas id="burnDownChart" style="width:100%;height:340px;min-height:180px;"></canvas></div></div>
             <div class="table-responsive"><table class="table table-bordered statement-table">
             <thead><tr><th>Month</th><th>Date</th><th>EMI</th><th>Principal Paid</th><th>Interest Paid</th><th>Part Payment</th><th title="Changing rate here updates this month and all following months automatically">Interest Rate &#9432;</th><th>Pending</th></tr></thead><tbody>`;
         loan.statement.forEach((row, i) => {
