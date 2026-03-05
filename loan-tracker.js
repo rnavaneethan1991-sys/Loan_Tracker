@@ -4,12 +4,15 @@
 
 // === Version Info (update here for both developer and end user) ===
 
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.5.0';
 const APP_LAST_UPDATED = '2026-03-05';
-// Version: 2.2.0
+// Version: 2.5.0
 // Last Updated: 2026-03-05
 
 // Version History:
+// 2.5.0 - 2026-03-05: Interest rate change propagates to all following months automatically
+// 2.4.0 - 2026-03-05: Processing fee support — one-time fee tracked in summary and charts
+// 2.3.0 - 2026-03-05: Jewel Loan support (interest-only EMI, principal in final month)
 // 2.2.0 - 2026-03-05: Added Firebase Anonymous Auth for security
 // 2.1.0 - 2026-03-05: Firebase Spark plan + localStorage fallback, export/import backup
 // 2.0.0 - 2026-03-05: Removed Firebase, switched to localStorage, added export/import backup
@@ -127,7 +130,7 @@ function renderLoanList() {
             endMonth = end.toLocaleString('default', { month: 'short' });
             endYear = end.getFullYear();
         }
-        info.textContent = `${loan.principal} @ ${loan.interest}% for ${loan.tenure}m (Ends: ${endMonth} ${endYear})`;
+        info.textContent = `${loan.isJewelLoan ? '💎 ' : ''}${loan.principal} @ ${loan.interest}% for ${loan.tenure}m (Ends: ${endMonth} ${endYear})`;
         info.onclick = () => showLoanDetails(idx);
         const delBtn = document.createElement('button');
         delBtn.className = 'btn btn-danger btn-sm ms-2';
@@ -163,7 +166,12 @@ function showLoanDetails(idx) {
 
 function renderLoanDetails(idx, loan) {
     const container = document.getElementById('loanDetails');
-        let html = `<h4>Loan Details</h4>
+    const jewelBadge = loan.isJewelLoan ? `<span class="badge bg-warning text-dark ms-2">&#128142; Jewel Loan</span>` : '';
+    const emiLabel = loan.isJewelLoan ? 'Monthly Interest' : 'EMI';
+    const origEMI = loan.originalEMI || (loan.isJewelLoan
+        ? Math.round(loan.principal * loan.interest / 12 / 100)
+        : calcEMI(loan.principal, loan.interest, loan.tenure));
+        let html = `<h4>Loan Details ${jewelBadge}</h4>
             <div class="mb-2">
                 <label><b>Principal:</b> <input id="editPrincipal" type="number" min="1" value="${loan.principal}" style="width:120px"></label>
             </div>
@@ -173,17 +181,19 @@ function renderLoanDetails(idx, loan) {
             <div class="mb-2">
                 <label><b>Tenure:</b> <input id="editTenure" type="number" min="1" value="${loan.tenure}" style="width:80px"> months</label>
             </div>
+            <div class="mb-2">
+                <label><b>Processing Fee (one-time):</b> ₹<input id="editProcessingFee" type="number" min="0" value="${loan.processingFee||0}" style="width:120px"></label>
+            </div>
             <div class="mb-2"><b>Original Tenure:</b> ${loan.originalTenure || loan.tenure} months</div>
-            <div class="mb-2"><b>Original EMI:</b> ₹${loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure)}</div>
+            <div class="mb-2"><b>${emiLabel}:</b> ₹${origEMI}${loan.isJewelLoan ? ' <small class="text-muted">(interest only; principal due in last month)</small>' : ''}</div>
             <div class="mb-2"><b>Current Tenure (after part payments):</b> ${loan.statement ? loan.statement.length : loan.tenure} months</div>
-            <div class="mb-2"><b>EMI:</b> ₹${loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure)}</div>
             <div class="mb-2 d-flex gap-2">
                 <button class="btn btn-primary btn-sm" onclick="saveLoanEdits(${idx})">Save Changes</button>
                 <button class="btn btn-secondary btn-sm" onclick="downloadStatement(${idx})">Download Statement</button>
             </div>
             <div class="mt-4"><h5>Loan Burn Down</h5><div style="width:100%;max-width:700px;margin:0 auto;"><canvas id="burnDownChart" style="width:100%;height:340px;min-height:180px;"></canvas></div></div>
             <div class="table-responsive"><table class="table table-bordered statement-table">
-            <thead><tr><th>Month</th><th>Date</th><th>EMI</th><th>Principal Paid</th><th>Interest Paid</th><th>Part Payment</th><th>Interest Rate</th><th>Pending</th></tr></thead><tbody>`;
+            <thead><tr><th>Month</th><th>Date</th><th>EMI</th><th>Principal Paid</th><th>Interest Paid</th><th>Part Payment</th><th title="Changing rate here updates this month and all following months automatically">Interest Rate &#9432;</th><th>Pending</th></tr></thead><tbody>`;
         loan.statement.forEach((row, i) => {
             html += `<tr>
                 <td>${i+1}</td>
@@ -296,6 +306,8 @@ function saveLoanEdits(idx) {
     const newPrincipal = Number(document.getElementById('editPrincipal').value);
     const newInterest = Number(document.getElementById('editInterest').value);
     const newTenure = Number(document.getElementById('editTenure').value);
+    const newProcessingFee = Number(document.getElementById('editProcessingFee').value) || 0;
+    loan.processingFee = newProcessingFee;
     // Preserve original values if not already set
     if (loan.originalTenure === undefined) loan.originalTenure = loan.tenure;
     if (loan.originalEMI === undefined) loan.originalEMI = calcEMI(loan.principal, loan.interest, loan.tenure);
@@ -306,6 +318,10 @@ function saveLoanEdits(idx) {
         loan.principal = newPrincipal;
         loan.interest = newInterest;
         loan.tenure = newTenure;
+        // Recalculate originalEMI based on loan type
+        loan.originalEMI = loan.isJewelLoan
+            ? Math.round(newPrincipal * newInterest / 12 / 100)
+            : calcEMI(newPrincipal, newInterest, newTenure);
         loan.statement = generateStatement(loan);
         // Restore part payments and custom interest rates for overlapping months
         for (let i = 0; i < Math.min(oldStatement.length, loan.statement.length); i++) {
@@ -338,7 +354,7 @@ function calcEMI(P, R, N) {
 }
 
 function generateStatement(loan) {
-    let { principal, interest, tenure } = loan;
+    let { principal, interest, tenure, isJewelLoan } = loan;
     let pending = principal;
     let statement = [];
     let currentRate = interest;
@@ -347,19 +363,34 @@ function generateStatement(loan) {
     for (let m = 1; m <= tenure; m++) {
         let row = {};
         row.interestRate = currentRate;
-        let emi = calcEMI(pending, currentRate, tenure-m+1);
-        let interestPaid = Math.round(pending * currentRate/12/100);
-        let principalPaid = emi - interestPaid;
-        row.emi = emi;
-        row.interestPaid = interestPaid;
-        row.principalPaid = principalPaid;
-        row.partPayment = 0;
-        // Calculate date for this EMI
-        let emiDate = new Date(startDate);
-        emiDate.setMonth(emiDate.getMonth() + (m-1));
-        row.date = emiDate.toLocaleString('default', { month: 'short', year: 'numeric' });
-        pending -= principalPaid;
-        row.pending = Math.max(0, Math.round(pending));
+        let interestPaid = Math.round(pending * currentRate / 12 / 100);
+        let isLastMonth = (m === tenure);
+        if (isJewelLoan) {
+            // Interest-only every month; full principal in last month
+            let principalPaid = isLastMonth ? pending : 0;
+            let emi = interestPaid + principalPaid;
+            row.emi = Math.round(emi);
+            row.interestPaid = interestPaid;
+            row.principalPaid = Math.round(principalPaid);
+            row.partPayment = 0;
+            let emiDate = new Date(startDate);
+            emiDate.setMonth(emiDate.getMonth() + (m - 1));
+            row.date = emiDate.toLocaleString('default', { month: 'short', year: 'numeric' });
+            pending -= principalPaid;
+            row.pending = Math.max(0, Math.round(pending));
+        } else {
+            let emi = calcEMI(pending, currentRate, tenure - m + 1);
+            let principalPaid = emi - interestPaid;
+            row.emi = emi;
+            row.interestPaid = interestPaid;
+            row.principalPaid = principalPaid;
+            row.partPayment = 0;
+            let emiDate = new Date(startDate);
+            emiDate.setMonth(emiDate.getMonth() + (m - 1));
+            row.date = emiDate.toLocaleString('default', { month: 'short', year: 'numeric' });
+            pending -= principalPaid;
+            row.pending = Math.max(0, Math.round(pending));
+        }
         statement.push(row);
     }
     return statement;
@@ -378,7 +409,11 @@ function updatePartPayment(loanIdx, monthIdx, value) {
 function updateInterestRate(loanIdx, monthIdx, value) {
     const loans = cachedLoans;
     const loan = loans[loanIdx];
-    loan.statement[monthIdx].interestRate = Number(value)||loan.interest;
+    const newRate = Number(value) || loan.interest;
+    // Apply new rate to this month and all following months
+    for (let i = monthIdx; i < loan.statement.length; i++) {
+        loan.statement[i].interestRate = newRate;
+    }
     recalcStatement(loan);
     saveLoans(loans, () => {
         renderLoanDetails(loanIdx, loan);
@@ -389,7 +424,34 @@ function recalcStatement(loan) {
     let pending = loan.principal;
     let startDate = loan.startDate ? new Date(loan.startDate) : new Date();
     let m = 0;
-    // Always use the original EMI for recalculation
+    const tenure = loan.originalTenure || loan.tenure;
+    if (loan.isJewelLoan) {
+        // Jewel loan: interest-only each month, principal in last month
+        // Part payments reduce principal, shortening what's owed at end
+        loan.statement = loan.statement || [];
+        for (let i = 0; i < tenure; i++) {
+            let row = loan.statement[i] || {};
+            let rate = row.interestRate || loan.interest;
+            let interestPaid = Math.round(pending * rate / 12 / 100);
+            let isLastMonth = (i === tenure - 1);
+            let partPayment = Number(row.partPayment) || 0;
+            let principalPaid = isLastMonth ? pending : 0;
+            let emi = interestPaid + principalPaid;
+            row.emi = Math.max(0, Math.round(emi));
+            row.interestPaid = interestPaid;
+            row.principalPaid = Math.round(principalPaid);
+            let emiDate = new Date(startDate);
+            emiDate.setMonth(emiDate.getMonth() + i);
+            row.date = emiDate.toLocaleString('default', { month: 'short', year: 'numeric' });
+            pending -= (principalPaid + partPayment);
+            row.pending = Math.max(0, Math.round(pending));
+            loan.statement[i] = row;
+            if (pending <= 0) { loan.statement = loan.statement.slice(0, i + 1); return; }
+        }
+        loan.statement = loan.statement.slice(0, tenure);
+        return;
+    }
+    // Standard loan recalc
     let fixedEMI = loan.originalEMI || calcEMI(loan.principal, loan.interest, loan.tenure);
     while (pending > 0.5 && m < 600) { // safety limit
         let row = loan.statement[m] || {};
@@ -422,7 +484,7 @@ function recalcStatement(loan) {
 
 // --- Pie Charts ---
 function updatePieCharts(selectedLoan) {
-    let totalPrincipalPaid = 0, totalInterestPaid = 0, totalPartPaid = 0, totalPaid = 0, totalPrincipal = 0;
+    let totalPrincipalPaid = 0, totalInterestPaid = 0, totalPartPaid = 0, totalProcessingFee = 0, totalPaid = 0, totalPrincipal = 0;
     let loanName = '';
     if (selectedLoan) {
         selectedLoan.statement?.forEach(row => {
@@ -430,6 +492,7 @@ function updatePieCharts(selectedLoan) {
             totalInterestPaid += row.interestPaid;
             totalPartPaid += Number(row.partPayment)||0;
         });
+        totalProcessingFee = Number(selectedLoan.processingFee) || 0;
         totalPrincipal = selectedLoan.principal;
         loanName = selectedLoan.name || `Loan`;
     } else {
@@ -440,29 +503,32 @@ function updatePieCharts(selectedLoan) {
                 totalInterestPaid += row.interestPaid;
                 totalPartPaid += Number(row.partPayment)||0;
             });
+            totalProcessingFee += Number(loan.processingFee) || 0;
             totalPrincipal += loan.principal;
         });
         loanName = 'All Loans';
     }
-    totalPaid = totalPrincipalPaid + totalInterestPaid + totalPartPaid;
+    totalPaid = totalPrincipalPaid + totalInterestPaid + totalPartPaid + totalProcessingFee;
     // Pie 1: % of total paid
     drawPie('piePaid',
-        [totalPrincipalPaid, totalInterestPaid, totalPartPaid],
-        ['Principal Paid', 'Interest Paid', 'Part Payment'],
+        [totalPrincipalPaid, totalInterestPaid, totalPartPaid, totalProcessingFee],
+        ['Principal Paid', 'Interest Paid', 'Part Payment', 'Processing Fee'],
         [
             `Principal: ₹${totalPrincipalPaid} (${((totalPrincipalPaid/totalPaid)*100||0).toFixed(1)}%)`,
             `Interest: ₹${totalInterestPaid} (${((totalInterestPaid/totalPaid)*100||0).toFixed(1)}%)`,
-            `Part Payment: ₹${totalPartPaid} (${((totalPartPaid/totalPaid)*100||0).toFixed(1)}%)`
+            `Part Payment: ₹${totalPartPaid} (${((totalPartPaid/totalPaid)*100||0).toFixed(1)}%)`,
+            `Processing Fee: ₹${totalProcessingFee} (${((totalProcessingFee/totalPaid)*100||0).toFixed(1)}%)`
         ]
     );
     // Pie 2: % of total principal
     drawPie('piePrincipal',
-        [totalPrincipalPaid, totalInterestPaid, totalPartPaid],
-        ['Principal Paid', 'Interest Paid', 'Part Payment'],
+        [totalPrincipalPaid, totalInterestPaid, totalPartPaid, totalProcessingFee],
+        ['Principal Paid', 'Interest Paid', 'Part Payment', 'Processing Fee'],
         [
             `Principal: ₹${totalPrincipalPaid} (${((totalPrincipalPaid/totalPrincipal)*100||0).toFixed(1)}%)`,
             `Interest: ₹${totalInterestPaid} (${((totalInterestPaid/totalPrincipal)*100||0).toFixed(1)}%)`,
-            `Part Payment: ₹${totalPartPaid} (${((totalPartPaid/totalPrincipal)*100||0).toFixed(1)}%)`
+            `Part Payment: ₹${totalPartPaid} (${((totalPartPaid/totalPrincipal)*100||0).toFixed(1)}%)`,
+            `Processing Fee: ₹${totalProcessingFee} (${((totalProcessingFee/totalPrincipal)*100||0).toFixed(1)}%)`
         ]
     );
 }
@@ -477,7 +543,7 @@ function drawPie(id, data, labels, legendLabels) {
             labels: legendLabels,
             datasets: [{
                 data,
-                backgroundColor: ['#4caf50', '#2196f3', '#ff9800'],
+                backgroundColor: ['#4caf50', '#2196f3', '#ff9800', '#e91e63'],
             }]
         },
         options: {
@@ -509,9 +575,15 @@ document.getElementById('addLoanForm').onsubmit = function(e) {
         startDate = d.toISOString();
     }
     const loan = { principal, interest, tenure, startDate };
+    const isJewelLoan = document.getElementById('isJewelLoan').checked;
+    if (isJewelLoan) loan.isJewelLoan = true;
+    const processingFee = Number(document.getElementById('processingFee').value) || 0;
+    if (processingFee > 0) loan.processingFee = processingFee;
     // Set original tenure and EMI before generating statement
     loan.originalTenure = tenure;
-    loan.originalEMI = calcEMI(principal, interest, tenure);
+    loan.originalEMI = isJewelLoan
+        ? Math.round(principal * interest / 12 / 100)  // interest-only monthly amount
+        : calcEMI(principal, interest, tenure);
     loan.statement = generateStatement(loan);
     const loans = cachedLoans;
     loans.push(loan);
@@ -527,10 +599,25 @@ document.getElementById('addLoanForm').onsubmit = function(e) {
 function downloadStatement(idx) {
     const loans = cachedLoans;
     const loan = loans[idx];
-    let csv = 'Month,Date,EMI,Principal Paid,Interest Paid,Part Payment,Interest Rate,Pending\n';
+    let csv = `Loan Summary\n`;
+    csv += `Principal,₹${loan.principal}\n`;
+    csv += `Interest Rate,${loan.interest}%\n`;
+    csv += `Tenure,${loan.tenure} months\n`;
+    if (loan.processingFee) csv += `Processing Fee (one-time),₹${loan.processingFee}\n`;
+    csv += `\nMonth,Date,EMI,Principal Paid,Interest Paid,Part Payment,Interest Rate,Pending\n`;
     loan.statement.forEach((row, i) => {
         csv += `${i+1},${row.date || ''},${row.emi},${row.principalPaid},${row.interestPaid},${row.partPayment||0},${row.interestRate||loan.interest},${row.pending}\n`;
     });
+    // Total row
+    const totPrincipal = loan.statement.reduce((s,r) => s + r.principalPaid, 0);
+    const totInterest = loan.statement.reduce((s,r) => s + r.interestPaid, 0);
+    const totPart = loan.statement.reduce((s,r) => s + (Number(r.partPayment)||0), 0);
+    const fee = Number(loan.processingFee) || 0;
+    csv += `\nTotal Paid to Bank,₹${totPrincipal + totInterest + totPart + fee}\n`;
+    csv += `  Principal Paid,₹${totPrincipal}\n`;
+    csv += `  Interest Paid,₹${totInterest}\n`;
+    csv += `  Part Payments,₹${totPart}\n`;
+    if (fee) csv += `  Processing Fee,₹${fee}\n`;
     const blob = new Blob([csv], {type: 'text/csv'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

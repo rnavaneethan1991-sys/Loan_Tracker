@@ -141,6 +141,14 @@
             <label for="startDate" class="form-label">First EMI Date</label>
             <input type="date" class="form-control" id="startDate">
           </div>
+          <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" id="isJewelLoan">
+            <label class="form-check-label" for="isJewelLoan">Is this a Jewel Loan? <small class="text-muted">(Interest only each month; full principal in last month)</small></label>
+          </div>
+          <div class="mb-3">
+            <label for="processingFee" class="form-label">Processing Fee <small class="text-muted">(one-time, optional)</small></label>
+            <input type="number" class="form-control" id="processingFee" min="0" value="0">
+          </div>
           <button type="submit" class="btn btn-primary">Add Loan</button>
         </form>
       </div>
