@@ -4,44 +4,78 @@
 
 // === Version Info (update here for both developer and end user) ===
 
-const APP_VERSION = '1.2.1';
-const APP_LAST_UPDATED = '2025-12-17';
-// Version: 1.2.1
-// Last Updated: 2025-12-17
+const APP_VERSION = '2.0.0';
+const APP_LAST_UPDATED = '2026-03-05';
+// Version: 2.0.0
+// Last Updated: 2026-03-05
 
 // Version History:
+// 2.0.0 - 2026-03-05: Removed Firebase, switched to localStorage, added export/import backup
 // 1.2.1 - 2025-12-17: Burn down chart moved above statement, minor UI improvements
 // 1.2.0 - 2025-12-16: End date reflects real closure, tenure/EMI preserved, version header added
 // 1.1.0 - 2025-12-15: Part payment reduces tenure, not EMI
 // 1.0.0 - Initial version
 
-// --- Data Management (Firebase) ---
+const STORAGE_KEY = 'loanTrackerData';
+
+// --- Data Management (localStorage) ---
 // Global cache for UI updates
 let cachedLoans = [];
 
-
-function listenToLoans(callback) {
-    db.ref('loans').on('value', snapshot => {
-        const data = snapshot.val() || [];
-        console.log('Loaded loans from Firebase:', data);
-        cachedLoans = data;
-        callback(cachedLoans);
-    }, function(error) {
-        console.error('Error loading loans:', error);
-    });
+function loadLoans() {
+    try {
+        const data = localStorage.getItem(STORAGE_KEY);
+        cachedLoans = data ? JSON.parse(data) : [];
+    } catch (e) {
+        console.error('Error loading loans from localStorage:', e);
+        cachedLoans = [];
+    }
+    return cachedLoans;
 }
 
 function saveLoans(loans, callback) {
-    console.log('Saving loans to Firebase:', loans);
-    db.ref('loans').set(loans, function(error) {
-        if (error) {
-            console.error('Error saving loans:', error);
-        } else {
-            console.log('Loans saved successfully');
+    try {
+        cachedLoans = loans;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(loans));
+    } catch (e) {
+        console.error('Error saving loans to localStorage:', e);
+    }
+    if (callback) callback();
+}
+
+// --- Export / Import ---
+function exportData() {
+    const data = JSON.stringify(cachedLoans, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'loan-tracker-backup.json';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function importData(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const imported = JSON.parse(e.target.result);
+            if (!Array.isArray(imported)) throw new Error('Invalid format');
+            if (!confirm(`Import ${imported.length} loan(s)? This will replace all current data.`)) return;
+            saveLoans(imported, () => {
+                renderLoanList();
+                updatePieCharts();
+                document.getElementById('loanDetails').innerHTML = '';
+                alert('Data imported successfully!');
+            });
+        } catch (err) {
+            alert('Invalid backup file: ' + err.message);
         }
-        if (callback) callback(error);
-    });
-    cachedLoans = loans;
+    };
+    reader.readAsText(file);
+    event.target.value = ''; // reset so same file can be re-imported
 }
 
 // --- UI Rendering ---
@@ -154,6 +188,8 @@ function renderLoanDetails(idx, loan) {
         container.innerHTML = html;
         // Draw the burn down chart
         setTimeout(() => drawBurnDownChart(loan), 0);
+}
+
 // --- Burn Down Chart ---
 function drawBurnDownChart(loan) {
     const ctx = document.getElementById('burnDownChart');
@@ -240,7 +276,6 @@ function drawBurnDownChart(loan) {
         }
     });
 }
-}
 
 // Save edits to principal, interest, tenure
 function saveLoanEdits(idx) {
@@ -278,12 +313,15 @@ function saveLoanEdits(idx) {
 // --- Loan Calculation ---
 function calcEMI(P, R, N) {
     // Match Excel's PMT function for EMI calculation
+    console.log('calcEMI called with:', {P, R, N});
     const r = R / 12 / 100;
+    console.log('Monthly rate r:', r);
     if (r === 0) return Math.round(P / N);
     // Use higher precision and round only at the end
     const numerator = P * r * Math.pow(1 + r, N);
     const denominator = Math.pow(1 + r, N) - 1;
     const emi = numerator / denominator;
+    console.log('EMI calculation:', {numerator, denominator, emi, emiRounded: Math.round(emi)});
     return Math.round(emi);
 }
 
@@ -459,6 +497,9 @@ document.getElementById('addLoanForm').onsubmit = function(e) {
         startDate = d.toISOString();
     }
     const loan = { principal, interest, tenure, startDate };
+    // Set original tenure and EMI before generating statement
+    loan.originalTenure = tenure;
+    loan.originalEMI = calcEMI(principal, interest, tenure);
     loan.statement = generateStatement(loan);
     const loans = cachedLoans;
     loans.push(loan);
@@ -468,9 +509,6 @@ document.getElementById('addLoanForm').onsubmit = function(e) {
         var modal = bootstrap.Modal.getInstance(document.getElementById('addLoanModal'));
         modal.hide();
     });
-        // Set original tenure and EMI on loan creation
-        loan.originalTenure = tenure;
-        loan.originalEMI = calcEMI(principal, interest, tenure);
 };
 
 // --- Download Statement ---
@@ -491,27 +529,32 @@ function downloadStatement(idx) {
 }
 
 // --- Init ---
-window.onload = function() {
+// Script is loaded dynamically, so window.load may have already fired.
+// Run init immediately if DOM is ready, otherwise wait for it.
+function initApp() {
     // Show version and last updated date to user
-    // Place version/date info at top right of page
-    // Always update version info in the dedicated div
     var versionInfo = document.getElementById('versionInfo');
     if (versionInfo) {
         versionInfo.innerHTML = `Version: ${APP_VERSION}<br>Last Updated: ${APP_LAST_UPDATED}`;
     }
 
-    // Real-time sync from Firebase
-    listenToLoans(function(loans) {
-        // Fix: recalculate statement for all loans if date is missing
-        let changed = false;
-        loans.forEach(loan => {
-            if (loan.statement && loan.statement.length > 0 && (!loan.statement[0].date)) {
-                loan.statement = generateStatement(loan);
-                changed = true;
-            }
-        });
-        if (changed) saveLoans(loans);
-        renderLoanList();
-        updatePieCharts();
+    // Load data from localStorage
+    const loans = loadLoans();
+    // Fix: recalculate statement for all loans if date is missing
+    let changed = false;
+    loans.forEach(loan => {
+        if (loan.statement && loan.statement.length > 0 && (!loan.statement[0].date)) {
+            loan.statement = generateStatement(loan);
+            changed = true;
+        }
     });
-};
+    if (changed) saveLoans(loans);
+    renderLoanList();
+    updatePieCharts();
+}
+
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    initApp();
+} else {
+    window.addEventListener('load', initApp);
+}
