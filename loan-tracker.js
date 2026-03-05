@@ -4,12 +4,14 @@
 
 // === Version Info (update here for both developer and end user) ===
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.2.0';
 const APP_LAST_UPDATED = '2026-03-05';
-// Version: 2.0.0
+// Version: 2.2.0
 // Last Updated: 2026-03-05
 
 // Version History:
+// 2.2.0 - 2026-03-05: Added Firebase Anonymous Auth for security
+// 2.1.0 - 2026-03-05: Firebase Spark plan + localStorage fallback, export/import backup
 // 2.0.0 - 2026-03-05: Removed Firebase, switched to localStorage, added export/import backup
 // 1.2.1 - 2025-12-17: Burn down chart moved above statement, minor UI improvements
 // 1.2.0 - 2025-12-16: End date reflects real closure, tenure/EMI preserved, version header added
@@ -18,29 +20,39 @@ const APP_LAST_UPDATED = '2026-03-05';
 
 const STORAGE_KEY = 'loanTrackerData';
 
-// --- Data Management (localStorage) ---
+// --- Data Management (Firebase + localStorage fallback) ---
 // Global cache for UI updates
 let cachedLoans = [];
 
-function loadLoans() {
-    try {
-        const data = localStorage.getItem(STORAGE_KEY);
-        cachedLoans = data ? JSON.parse(data) : [];
-    } catch (e) {
-        console.error('Error loading loans from localStorage:', e);
-        cachedLoans = [];
-    }
-    return cachedLoans;
+function listenToLoans(callback) {
+    db.ref('loans').on('value', snapshot => {
+        const data = snapshot.val() || [];
+        cachedLoans = data;
+        // Also save to localStorage as backup
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {}
+        callback(cachedLoans);
+    }, function(error) {
+        console.error('Firebase read failed, loading from localStorage:', error);
+        // Fallback to localStorage if Firebase fails
+        try {
+            const local = localStorage.getItem(STORAGE_KEY);
+            cachedLoans = local ? JSON.parse(local) : [];
+        } catch(e) { cachedLoans = []; }
+        callback(cachedLoans);
+    });
 }
 
 function saveLoans(loans, callback) {
-    try {
-        cachedLoans = loans;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(loans));
-    } catch (e) {
-        console.error('Error saving loans to localStorage:', e);
-    }
-    if (callback) callback();
+    cachedLoans = loans;
+    // Save to localStorage immediately (fast)
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(loans)); } catch(e) {}
+    // Save to Firebase (syncs across devices)
+    db.ref('loans').set(loans, function(error) {
+        if (error) {
+            console.error('Firebase save failed (data safe in localStorage):', error);
+        }
+        if (callback) callback(error);
+    });
 }
 
 // --- Export / Import ---
@@ -538,19 +550,34 @@ function initApp() {
         versionInfo.innerHTML = `Version: ${APP_VERSION}<br>Last Updated: ${APP_LAST_UPDATED}`;
     }
 
-    // Load data from localStorage
-    const loans = loadLoans();
-    // Fix: recalculate statement for all loans if date is missing
-    let changed = false;
-    loans.forEach(loan => {
-        if (loan.statement && loan.statement.length > 0 && (!loan.statement[0].date)) {
-            loan.statement = generateStatement(loan);
-            changed = true;
-        }
-    });
-    if (changed) saveLoans(loans);
-    renderLoanList();
-    updatePieCharts();
+    // Sign in anonymously, then load data
+    firebase.auth().signInAnonymously()
+        .then(() => {
+            // Real-time sync from Firebase (falls back to localStorage if offline)
+            listenToLoans(function(loans) {
+                // Fix: recalculate statement for all loans if date is missing
+                let changed = false;
+                loans.forEach(loan => {
+                    if (loan.statement && loan.statement.length > 0 && (!loan.statement[0].date)) {
+                        loan.statement = generateStatement(loan);
+                        changed = true;
+                    }
+                });
+                if (changed) saveLoans(loans);
+                renderLoanList();
+                updatePieCharts();
+            });
+        })
+        .catch(error => {
+            console.error('Anonymous auth failed, loading from localStorage:', error);
+            // Fallback to localStorage if auth fails
+            try {
+                const local = localStorage.getItem(STORAGE_KEY);
+                cachedLoans = local ? JSON.parse(local) : [];
+            } catch(e) { cachedLoans = []; }
+            renderLoanList();
+            updatePieCharts();
+        });
 }
 
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
